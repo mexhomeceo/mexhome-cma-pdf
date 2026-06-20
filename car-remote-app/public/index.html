@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Car Remote">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <title>Car Remote</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg:         #0a0a0a;
+      --surface:    #131313;
+      --surface2:   #1c1c1e;
+      --surface3:   #252528;
+      --accent:     #3b82f6;
+      --accent-dim: rgba(59,130,246,0.18);
+      --green:      #22c55e;
+      --green-dim:  rgba(34,197,94,0.15);
+      --amber:      #f59e0b;
+      --amber-dim:  rgba(245,158,11,0.15);
+      --red:        #ef4444;
+      --red-dim:    rgba(239,68,68,0.15);
+      --text:       #f1f5f9;
+      --text2:      #94a3b8;
+      --text3:      #475569;
+      --border:     rgba(255,255,255,0.07);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      padding-top: calc(14px + env(safe-area-inset-top));
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .wordmark {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      color: var(--text);
+    }
+
+    .wordmark em { color: var(--accent); font-style: normal; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 13px;
+      border-radius: 999px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.15s;
+    }
+
+    .badge:active { opacity: 0.7; }
+    .badge.on  { color: var(--green); border-color: rgba(34,197,94,0.25); }
+    .badge.off { color: var(--text2); }
+
+    .pip {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
+    .pip.pulse { animation: pip-pulse 2s ease-in-out infinite; }
+
+    @keyframes pip-pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.45; transform:scale(.75); }
+    }
+
+    /* ── Map area ───────────────────────────────────────────────────── */
+    #map-wrap {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #map { width: 100%; height: 100%; }
+
+    /* Leaflet overrides */
+    .leaflet-control-zoom {
+      border: 1px solid var(--border) !important;
+      border-radius: 12px !important;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,.5) !important;
+    }
+
+    .leaflet-control-zoom a {
+      background: var(--surface2) !important;
+      color: var(--text) !important;
+      border: none !important;
+      border-bottom: 1px solid var(--border) !important;
+      width: 36px !important; height: 36px !important;
+      line-height: 36px !important;
+      font-size: 16px !important;
+    }
+
+    .leaflet-control-zoom-out { border-bottom: none !important; }
+
+    /* Empty state overlay */
+    #empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    #empty .e-icon { font-size: 52px; filter: grayscale(.3); }
+    #empty .e-text { font-size: 14px; color: var(--text2); font-weight: 500; }
+
+    /* Distance pill */
+    #dist-pill {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      background: rgba(10,10,10,0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #dist-pill.show { display: flex; }
+    #dist-pill .dv { color: var(--accent); }
+
+    /* Recenter button */
+    #recenter {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      z-index: 20;
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    }
+
+    #recenter:active { transform: scale(.93); }
+
+    /* ── Bottom panel ───────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Parked info card */
+    #info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 13px 15px;
+      display: none;
+    }
+
+    #info-card.show { display: block; }
+
+    .ic-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.1px;
+      color: var(--text3);
+      margin-bottom: 5px;
+    }
+
+    .ic-address {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 3px;
+      line-height: 1.3;
+    }
+
+    .ic-meta {
+      font-size: 12px;
+      color: var(--text2);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .auto-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--green);
+      background: var(--green-dim);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    /* Park / Clear button */
+    #btn-park {
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      cursor: pointer;
+      transition: transform 0.12s, box-shadow 0.12s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    #btn-park.save {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 0 0 rgba(59,130,246,.4);
+      animation: btn-glow 3s ease-in-out infinite;
+    }
+
+    @keyframes btn-glow {
+      0%,100% { box-shadow: 0 0 20px rgba(59,130,246,.25); }
+      50%      { box-shadow: 0 0 36px rgba(59,130,246,.5); }
+    }
+
+    #btn-park.clear {
+      background: var(--surface2);
+      color: var(--text2);
+      border: 1px solid var(--border);
+      animation: none;
+    }
+
+    #btn-park:active { transform: scale(.97); }
+
+    /* Controls row */
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+    }
+
+    .btn-ctrl {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 12px 4px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.12s, opacity 0.12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-ctrl .ico { font-size: 22px; line-height: 1; }
+    .btn-ctrl:active { transform: scale(.93); }
+
+    .btn-ctrl[data-off] { opacity: .35; pointer-events: none; }
+
+    .btn-ctrl.nav    { color: var(--accent); border-color: rgba(59,130,246,.25); }
+    .btn-ctrl.unlock { color: var(--green);  border-color: rgba(34,197,94,.2); }
+    .btn-ctrl.lock   { color: var(--red);    border-color: rgba(239,68,68,.2); }
+    .btn-ctrl.start  { color: var(--amber);  border-color: rgba(245,158,11,.2); }
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: calc(140px + env(safe-area-inset-bottom));
+      transform: translateX(-50%) translateY(12px);
+      background: var(--surface3);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0;
+      transition: opacity 0.22s, transform 0.22s;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Map markers ────────────────────────────────────────────────── */
+    .m-car {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 3px solid #fff;
+      box-shadow: 0 0 0 5px rgba(59,130,246,.3), 0 6px 20px rgba(0,0,0,.6);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+
+    .m-user {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 3px solid #fff;
+      box-shadow: 0 0 0 7px rgba(34,197,94,.2);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">Car<em>Remote</em></div>
+  <div class="badge off" id="badge" onclick="connectCar()">
+    <span class="pip" id="pip"></span>
+    <span id="badge-txt">Connect Car</span>
+  </div>
+</header>
+
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <div id="empty">
+    <div class="e-icon">🚗</div>
+    <div class="e-text">Tap below to save your parking spot</div>
+  </div>
+
+  <div id="dist-pill">
+    <span>📍</span>
+    <span>Your car is</span>
+    <span class="dv" id="dist-val"></span>
+  </div>
+
+  <div id="recenter" onclick="recenter()" title="Center map">⊙</div>
+</div>
+
+<div class="panel">
+  <div id="info-card">
+    <div class="ic-label">Parked at</div>
+    <div class="ic-address" id="ic-addr">—</div>
+    <div class="ic-meta">
+      <span id="ic-time"></span>
+      <span class="auto-tag" id="auto-tag" style="display:none">⚡ Auto-unlock ON</span>
+    </div>
+  </div>
+
+  <button id="btn-park" class="save" onclick="handlePark()">
+    <span>📍</span><span>Save Parking Spot</span>
+  </button>
+
+  <div class="controls">
+    <button class="btn-ctrl nav" id="btn-nav" data-off onclick="navigate()">
+      <span class="ico">🗺️</span>Navigate
+    </button>
+    <button class="btn-ctrl unlock" id="btn-unlock" data-off onclick="carCmd('unlock')">
+      <span class="ico">🔓</span>Unlock
+    </button>
+    <button class="btn-ctrl lock" id="btn-lock" data-off onclick="carCmd('lock')">
+      <span class="ico">🔒</span>Lock
+    </button>
+    <button class="btn-ctrl start" id="btn-start" data-off onclick="carCmd('start')">
+      <span class="ico">🔑</span>Start
+    </button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────────
+let map, carMark, userMark, userCircle;
+let parked   = null;   // { lat, lng, address, timestamp }
+let userPos  = null;   // { lat, lng }
+let carOn    = false;
+let autoFired = false;
+const AUTO_RADIUS = 50; // metres
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+async function boot() {
+  buildMap();
+  await Promise.all([loadParked(), checkCar()]);
+  startGPS();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+  const p = new URLSearchParams(location.search);
+  if (p.get('connected') === 'true') { history.replaceState({}, '', '/'); toast('Car connected!', 'green'); }
+  if (p.get('error'))                { history.replaceState({}, '', '/'); toast('Auth error: ' + p.get('error'), 'red'); }
+}
+
+// ── Map ─────────────────────────────────────────────────────────────────────
+function buildMap() {
+  map = L.map('map', { zoomControl: false, attributionControl: false })
+          .setView([19.4326, -99.1332], 14);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+}
+
+// ── GPS ─────────────────────────────────────────────────────────────────────
+function startGPS() {
+  if (!navigator.geolocation) return toast('Geolocation unavailable');
+
+  navigator.geolocation.watchPosition(onPos, () => {}, {
+    enableHighAccuracy: true,
+    maximumAge: 5000,
+    timeout: 15000,
+  });
+}
+
+function onPos(p) {
+  userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+  const ll = [userPos.lat, userPos.lng];
+
+  if (!userMark) {
+    const ico = L.divIcon({ className: '', html: '<div class="m-user"></div>', iconSize: [18,18], iconAnchor: [9,9] });
+    userMark = L.marker(ll, { icon: ico, zIndexOffset: -10 }).addTo(map);
+    userCircle = L.circle(ll, { radius: p.coords.accuracy, color: '#22c55e', fillColor: '#22c55e', fillOpacity: .07, weight: 1 }).addTo(map);
+    if (!parked) map.setView(ll, 16);
+  } else {
+    userMark.setLatLng(ll);
+    userCircle.setLatLng(ll).setRadius(p.coords.accuracy);
+  }
+
+  if (parked) { updateDist(); tryAutoUnlock(); }
+}
+
+// ── Distance ────────────────────────────────────────────────────────────────
+function haversine(la1, lo1, la2, lo2) {
+  const R = 6371000, r = Math.PI / 180;
+  const dL = (la2 - la1) * r, dO = (lo2 - lo1) * r;
+  const a  = Math.sin(dL/2)**2 + Math.cos(la1*r) * Math.cos(la2*r) * Math.sin(dO/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function updateDist() {
+  if (!userPos || !parked) return;
+  const d = haversine(userPos.lat, userPos.lng, parked.lat, parked.lng);
+  const pill = document.getElementById('dist-pill');
+  pill.classList.add('show');
+  document.getElementById('dist-val').textContent = d < 1000 ? `${Math.round(d)} m away` : `${(d/1000).toFixed(1)} km away`;
+}
+
+// ── Auto unlock ──────────────────────────────────────────────────────────────
+function tryAutoUnlock() {
+  if (!carOn || autoFired || !userPos || !parked) return;
+  const d = haversine(userPos.lat, userPos.lng, parked.lat, parked.lng);
+  if (d <= AUTO_RADIUS) {
+    autoFired = true;
+    toast('🔓 You\'re back — auto-unlocking…', 'green');
+    setTimeout(() => carCmd('unlock', true), 1200);
+  }
+}
+
+// ── Parking ──────────────────────────────────────────────────────────────────
+async function loadParked() {
+  try {
+    const r = await fetch('/api/parking');
+    const d = await r.json();
+    if (d.location) showParked(d.location, false);
+  } catch {}
+}
+
+function showParked(loc, pan = true) {
+  parked    = loc;
+  autoFired = false;
+
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('dist-pill').classList.remove('show');
+
+  if (carMark) carMark.remove();
+  const ico = L.divIcon({ className: '', html: '<div class="m-car">🚗</div>', iconSize: [48,48], iconAnchor: [24,24] });
+  carMark = L.marker([loc.lat, loc.lng], { icon: ico }).addTo(map);
+  if (pan) map.setView([loc.lat, loc.lng], 17);
+
+  // Info card
+  document.getElementById('ic-addr').textContent = loc.address || `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`;
+  document.getElementById('ic-time').textContent = relTime(loc.timestamp);
+  document.getElementById('info-card').classList.add('show');
+  if (carOn) document.getElementById('auto-tag').style.display = 'inline-flex';
+
+  // Navigate button
+  document.getElementById('btn-nav').removeAttribute('data-off');
+
+  // Park button → clear
+  const b = document.getElementById('btn-park');
+  b.className = 'clear';
+  b.innerHTML = '<span>🗑️</span><span>Clear Parking Spot</span>';
+
+  if (userPos) { updateDist(); tryAutoUnlock(); }
+}
+
+function clearParked() {
+  parked = null;
+  if (carMark) { carMark.remove(); carMark = null; }
+  document.getElementById('empty').style.display = '';
+  document.getElementById('info-card').classList.remove('show');
+  document.getElementById('dist-pill').classList.remove('show');
+  document.getElementById('btn-nav').setAttribute('data-off', '');
+
+  const b = document.getElementById('btn-park');
+  b.className = 'save';
+  b.innerHTML = '<span>📍</span><span>Save Parking Spot</span>';
+}
+
+async function handlePark() {
+  if (parked) {
+    await fetch('/api/parking', { method: 'DELETE' });
+    clearParked();
+    toast('Parking spot cleared');
+    return;
+  }
+
+  if (!userPos) { toast('Still getting your location…'); return; }
+
+  const loc = { lat: userPos.lat, lng: userPos.lng, timestamp: new Date().toISOString(), address: null };
+
+  // Reverse geocode (Nominatim — free, no key needed)
+  try {
+    const g = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}&zoom=18`, {
+      headers: { 'Accept-Language': 'en' }
+    });
+    const gd = await g.json();
+    if (gd.address) {
+      const a = gd.address;
+      loc.address = [a.road || a.pedestrian, a.house_number, a.suburb || a.neighbourhood || a.city_district]
+                    .filter(Boolean).join(' ') || gd.display_name?.split(',')[0];
+    }
+  } catch {}
+
+  await fetch('/api/parking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(loc),
+  });
+
+  showParked(loc, true);
+  toast('📍 Parking spot saved!', 'green');
+}
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+function navigate() {
+  if (!parked) return;
+  const { lat, lng } = parked;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const url = ios
+    ? `maps://maps.apple.com/?daddr=${lat},${lng}&dirflg=w`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
+  window.open(url, '_blank');
+}
+
+function recenter() {
+  if (parked && userPos) {
+    const b = L.latLngBounds([[parked.lat, parked.lng], [userPos.lat, userPos.lng]]);
+    map.fitBounds(b, { padding: [60, 60] });
+  } else if (userPos) {
+    map.setView([userPos.lat, userPos.lng], 16);
+  } else if (parked) {
+    map.setView([parked.lat, parked.lng], 17);
+  }
+}
+
+// ── Car connection ───────────────────────────────────────────────────────────
+async function checkCar() {
+  try {
+    const r = await fetch('/api/car/status');
+    const d = await r.json();
+    setCarState(d.connected);
+  } catch {}
+}
+
+function setCarState(on) {
+  carOn = on;
+  const badge = document.getElementById('badge');
+  const pip   = document.getElementById('pip');
+  const txt   = document.getElementById('badge-txt');
+
+  badge.className = on ? 'badge on' : 'badge off';
+  pip.className   = on ? 'pip pulse' : 'pip';
+  txt.textContent = on ? 'Connected' : 'Connect Car';
+
+  ['btn-unlock', 'btn-lock', 'btn-start'].forEach(id => {
+    const b = document.getElementById(id);
+    on ? b.removeAttribute('data-off') : b.setAttribute('data-off', '');
+  });
+
+  if (parked && on) document.getElementById('auto-tag').style.display = 'inline-flex';
+}
+
+function connectCar() {
+  if (carOn) { toast('Car already connected ✓'); return; }
+  window.location.href = '/auth/connect';
+}
+
+// ── Car commands ─────────────────────────────────────────────────────────────
+async function carCmd(action, silent = false) {
+  if (!carOn && !silent) { toast('Connect your car first', 'red'); return; }
+
+  const labels = { unlock: 'Unlocking…', lock: 'Locking…', start: 'Starting engine…' };
+  if (!silent) toast(labels[action] || 'Sending…');
+
+  try {
+    const r = await fetch(`/api/car/${action}`, { method: 'POST' });
+    const d = await r.json();
+
+    if (d.error) { toast(d.error, 'red'); return; }
+
+    const ok = { unlock: '🔓 Car unlocked', lock: '🔒 Car locked', start: '🔑 Engine started' };
+    toast(ok[action] || 'Done!', 'green');
+  } catch {
+    toast('Network error', 'red');
+  }
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function relTime(iso) {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (diff < 1)    return 'Just now';
+  if (diff < 60)   return `${diff} min ago`;
+  if (diff < 1440) return `${Math.floor(diff/60)}h ${diff % 60}m ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+let toastTimer;
+function toast(msg, color = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.color = color === 'green' ? 'var(--green)' : color === 'red' ? 'var(--red)' : 'var(--text)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+boot();
+</script>
+</body>
+</html>
