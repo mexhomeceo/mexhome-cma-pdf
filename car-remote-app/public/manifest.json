@@ -1,0 +1,18 @@
+{
+  "name": "Car Remote",
+  "short_name": "CarRemote",
+  "description": "Save your parking spot and remotely control your car",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
