@@ -53,7 +53,6 @@ app.get('/auth/connect', (req, res) => {
     'required:read_vehicle_info',
     'required:read_location',
     'required:control_security',
-    'control_engine',
   ].join(' ');
 
   const params = new URLSearchParams({
